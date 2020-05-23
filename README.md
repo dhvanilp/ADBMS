@@ -3,7 +3,7 @@
 
 ## Run the project
 
-### Create a virtulenv for python2 and install requirements in src/requirements.txt
+### Create a virtulenv for python2 and install requirements in requirements.txt
 
 ### Generate the key pair in src/sslcert
 ```

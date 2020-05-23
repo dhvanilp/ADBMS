@@ -12,5 +12,5 @@ report/report.toc
 report/report.out
 
 *.pyc
-src/venv2
+venv
 
