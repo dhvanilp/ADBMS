@@ -1,0 +1,174 @@
+option optimize_for = LITE_RUNTIME;
+
+
+// Public Storage service messages
+
+message HashedStorageHeader {
+    enum HashAlgorithm {
+        SHA1 = 1;
+    }
+    required HashAlgorithm hashAlgorithm = 1;
+    required bytes hash = 2;
+    required StorageHeader header = 3;
+}
+
+message StorageHeader {
+    enum Operation {
+        READ = 1;
+        WRITE = 2;
+        XOR_WRITE = 3;
+    }
+    required Operation operation = 1;
+    required uint64 offset = 2;
+    required uint64 length = 3;
+    required uint64 requestTimestamp = 4;
+}
+
+message StorageResponseHeader {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    required StorageHeader header = 2;
+    optional string errorMsg = 3; // is set if status == ERROR
+}
+
+// Public dictionary service messages
+
+message DictionaryResponseHeader {
+    enum Status {
+        OK = 1;
+        NO_FREE_SPACE = 2;
+        NOT_EXISTING_KEY = 3;
+    }
+    required Status status = 1;
+    repeated DataLocation locations = 2;
+    optional string key = 3;
+}
+
+message DataLocation {
+    required HashedStorageHeader header = 1;
+    required uint64 port = 2;
+    required string host = 3;
+}
+
+message DictionaryHeader {
+    enum Operation {
+        GET = 1;
+        ADD = 2;
+        DELETE = 3;
+        HEARTBEAT = 4;
+    }
+    required Operation operation = 1;
+    required string issuer = 2;
+    optional string key = 3;
+    optional uint64 size = 4;
+}
+
+// Internal Storage service messages for administration
+// TODO: add hash to ensure that only trusted members can send messages?
+
+message StorageAdminRequestContainer {
+    enum Operation {
+        SET_XOR_SERVER = 1;
+        RECOVER_FROM = 2;
+    }
+    required Operation operation = 1;
+    optional bytes messageData = 2;
+}
+
+message StorageAdminServerLocation { // also used by freelist
+    required string host = 1;
+    required uint64 port = 2;
+}
+
+message StorageAdminRecoveryOperation {
+    required StorageAdminServerLocation serverA = 1;
+    required StorageAdminServerLocation serverB = 2;
+}
+
+message StorageAdminResponse {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    optional string errorMsg = 2; // is set if status == ERROR
+}
+
+// Internal dictionary service messages for administration
+
+// GENERALIZE TO ADMIN?
+message AdminResponse {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    optional string errorMsg = 2; // is set if status == ERROR
+}
+
+message DictionaryKeys {
+    repeated string keys = 1;
+    required AdminResponse response = 2;
+}
+
+message RequestContainer {
+    enum Notification {
+        NEW_SLAVE = 1;
+        NEW_MASTER = 2;
+        IS_MASTER = 3;
+        IS_SLAVE = 4;
+        RESET_STATE = 5;
+        MOVE_HOST = 6;
+    }
+    required Notification notification = 1;
+    optional bytes messageData = 2;
+}
+
+message MoveHostOperation {
+    required DictionaryLocation moveFrom = 1;
+    required DictionaryLocation moveTo = 2;
+}
+
+message DictionaryLocation {
+    required string host = 1;
+    required uint64 port = 2;
+}
+
+// free list messages
+message SpaceLocation {
+    required string host = 1;
+    required uint64 port = 2;
+    required uint64 offset = 3;
+    required uint64 length = 4;
+}
+
+message FreelistRequest {
+    enum Operation {
+        ALLOCATE = 1;
+        RELEASE = 2;
+        MOVE_HOST = 3;
+    }
+    required Operation operation = 1;
+    // for ALLOCATE only:
+    optional uint64 numberOfBytes = 2;
+    // for RELEASE only:
+    repeated SpaceLocation releasedSpace = 3;
+    // for MOVE_HOST online:
+    optional StorageAdminServerLocation moveFrom = 4;
+    optional StorageAdminServerLocation moveTo = 5;
+}
+
+message FreeListResponse {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    optional string errorMsg = 2; // is set if status == ERROR
+    repeated SpaceLocation freeSpace = 3;
+}
+
+

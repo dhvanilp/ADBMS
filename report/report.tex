@@ -1,0 +1,399 @@
+\documentclass[12pt,a4paper]{scrartcl}
+\usepackage[english]{babel}
+\usepackage{url}
+\usepackage{hyperref}
+
+\hypersetup{
+	colorlinks=true,
+	urlcolor=black,
+	linkcolor=black,
+	citecolor=black
+}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{amsmath}
+
+\title{\large{Highly Available, Distributed and Fault Tolerant Storage System} \\ \normalsize{Distributed Systems 2011}}
+\author{Karsten Westra\\1693905 \and Edwin-Jan Harmsma\\1735535}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+\clearpage
+
+
+% @karsten: ik heb 'problem statement' en 'state of the art' omgewisseld
+% omdat ik state of the art meer bij solution vind horen...
+
+\section{Context}
+The idea we had when starting this available distributed fault tolerant software system was to create a database system that nobody has ever seen before. Since that is an immensely difficult task we started researching existing data storage systems. On a single computer it is perfectly possible to read and write data effectively. However when we distribute the services of a storage system things get more complicated. We need communication and have consensus about what data to show to the user. What we basically want is to have a storage system from which we can read and write data in a scalable, consistent and fault tolerant way (that is we do not want to notice but still recover from faults).
+
+When we started to think about what a data storage system would need we immediately chose the key value system. It would be desirable to store data in a way in which it has as less meaning as possible. A key-value storage system allows an application to store data in a schema-less way. Programming language or architecture should not pose a problem when storing the data. Because of this there is no need to store data in a structured way like SQL (Structured Query Language). The main point: we do not want structure since that makes our life complicated. Some initial ideas and principles we used are already implemented by some existing projects. Some of these are: Apache Cassandra, Amazon Dynamo and Project Voldemort.
+
+There are different theories on how to make certain systems deal with errors. You could replicate your data over a network. This can be done in different ways. By dividing tasks (server distribution), by dividing data (sharding/replication). But when we distribute services we want to maintain some guiding principles which are scalability and consistency. It should be possible to add and remove servers as we please. Eventually we want to scale up as much as possible.
+
+% basics principles of storage systems
+% key->value, distributed file systems, memcache
+% introduce fault-tolerance (replication) and scalability
+
+\section{Problem statement}
+With scalability and fault tolerance in mind we started thinking about storage systems. What is the most common storage systems we use? Our first thought: Personal Computers. That is an object we use every day. A regular File system in a computer uses a storage system (hard disc), a file (or memory) table and a list of free space. It would be desirable if we could incorporate all these ideas in a distributed version like the NFS (network file system) introduced by Sun. All these separate services need to be stand alone services that can run on their own and be able to exist autonomously. Combining all these services result in a scalable fault tolerant storage system.
+
+The main operations we should support are GET (getting data), ADD (adding new data), DELETE (remove existing data) and SET (overwriting existing keys/data). Since we want to be distributed we need to have communications between different services. We need to communicate operations and data over a network. This needs to be secure and fault tolerant. What also should not be interesting and a thing to think about is the platform on which data is created every possible architecture and/or system should be able to store and retrieve their data in a secure and preferably consistent way.
+
+
+% introduce all requirements of our system
+% show get, add, delete, set operations
+% communication between different platforms
+% show that basic idea is the same as file system (free list, file table, raw storage).
+\section{State of the Art}
+\label{sec:state-of-the-art}
+% introduce XOR idea (raid4 and raid5)
+% introduce ring (P2P)
+% introduce consistent hashing compared with modulo
+
+\paragraph{Parity storage on application level}
+An important aspect of our application is that parity storage is used on the application level instead of hardware level as with Redundant Array of Independent Disks (RAID). Actually, our system uses RAID4 on application level for storing redundant data. This solves the problem that much disk space is wasted for storing the data redundant: our implementation uses 2 storage services and 1 parity instance, so only $1/3$ is wasted for redundancy instead of $1/2$ with normal replication. Also, our system assumes that no underlying hardware RAID is used for each single server instance, which is usually the case in data centres.
+
+The system uses RAID4, which is normal a major disadvantage because the entire system throughput depends on the parity server as shown in \autoref{fig:xor-replication}. We have solved this by using multiple software instances on one single machine, which must ensure that the parity instances are spread among different physical servers. In this way, the load is spread as with RAID5 but in a more flexible and less structural way.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.5\textwidth,trim=4cm 8cm 8cm 1cm,clip=true]{diagrams/xor-replication.pdf}
+\caption{XOR replication principle (RAID4)}
+\label{fig:xor-replication}
+\end{figure}
+
+\paragraph{Communication}
+Another new aspect is the way of communication. In our system the client (or front-end) is responsible for storing and collecting all the different pieces of data. This means that the client will just receive a generated key and a set of locations where it should store the data, and other clients can obtain the data from these locations by using the generated key. This communication structure will result in a relatively simple and low coupled system on implementation level since there is less communication between the components.
+
+The above way of communication requires that the storage server is able to authenticate the client to prevent intruders from reading or writing random data from the storage servers. We have chosen to use a timestamped signature that is generated by computing the hash of the operation and a timestamp. This ensures that the client can only perform the requested operation within a configurable amount of time.
+
+We are using a binary header-based protocol on the network level. We use Google Protocol Buffers~\cite{gpb}\cite{gpb-docs} for marshaling and unmarshaling messages, that can be followed by the raw bytes of file. This prevents that huge amounts of data must be marshaled. It also gives the performance benefit that once the header is parsed, much optimization can be performed on the incoming raw bytes.
+
+\paragraph{Item storage}
+Our system does not take consistency into account on storage (i.e. read / write) level. Consistency is only taken into account on item level. Which means that individual read and writes can be performed without communication between back-end components.
+
+Finally, the storage layer uses a block-size of 1 byte. This means theoretically that the storage space is used in an optimal way.
+
+\section{Solution details}
+The layered architecture of the entire system is shown in \autoref{fig:layers}. There exist three layers, where the front-end layer below the client is optional. This layer is intended to make the client layer less complex and to improve some potential security issues because it will hide all information about the underlying server infrastructure. With a front-end layer the client cannot trace the server that is storing a specific piece of file. This is not a very important issue since our architecture is based on this principle, however, it could make for example distributed denial-of-service attacks more easy.
+
+The two arrows in \autoref{fig:layers} display the two different interfaces that are seen by the client. As mentioned above, if the front-end layer will be used the client will only use the public interface (GET, ADD, DELETE) that is indicated by \emph{arrow 1}. The front-end layer will forward this to the right dictionary server and collect the data from the storage service. \emph{Arrow 2} indicates the low level storage interface (READ, WRITE) that the client will use to respectively read or write the content of an entity. This interface might at first sight look a security vulnerability, but remember that the client can only use this interface with a valid timestamped signature that is granted by the dictionary service (by \emph{arrow 1}). So, this must ensure that it is impossible to write or read data randomly from a storage server, and this also explains why the front-end layer is optional.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth,trim=1cm 16cm 1cm 4cm,clip=true]{diagrams/layer-architecture.pdf}
+\caption{Layered architecture}
+\label{fig:layers}
+\end{figure}
+
+In \autoref{fig:sequence-add} the sequence diagram of the ADD operation is shown. The ADD operation is shown because it is the most complex operation of all because it involves all other components. The front-end layer is not present in this diagram and the client will thus directly communicate with the Dictionary Services and Storage Services. Note that all objects in this diagram are distributed and require communication over a network. Also, the diagram suggests that for example \verb|write(offset, data)| completes in one step, but this is not the case in real life. Usually, these write actions are performed in multiple steps caused by of the buffering behavior of the underlying network  and the use of a network event library.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth,trim=0 2cm 3cm 1cm,clip=true]{diagrams/add-operation.png}
+\caption{Sequence diagram of the ADD operation. (Distributed communication within Dictionary Service and Freelist Service is not displayed for simplicity reasons.)}
+\label{fig:sequence-add}
+\end{figure}
+
+The following subsections will discuss all the individual layers in more detail.
+
+
+\subsection{Storage Service}
+The storage Service is with the Freelist Service the lowest layer in the architecture and only contains a very low level API that only allows \verb|READ|, \verb|WRITE| and \verb|XORED_WRITE| operations.
+
+\paragraph{Communication interface}
+The public (and internal) storage interface is relatively simple and is defined by the following three Protocol Buffer messages:
+\begin{verbatim}
+message HashedStorageHeader {
+    enum HashAlgorithm {
+        SHA1 = 1;
+    }
+    required HashAlgorithm hashAlgorithm = 1;
+    required bytes hash = 2;
+    required StorageHeader header = 3;
+}
+
+message StorageHeader {
+    enum Operation {
+        READ = 1;
+        WRITE = 2;
+        XOR_WRITE = 3;
+    }
+    required Operation operation = 1;
+    required uint64 offset = 2;
+    required uint64 length = 3;
+    required uint64 requestTimestamp = 4;
+}
+
+message StorageResponseHeader {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    required StorageHeader header = 2;
+    optional string errorMsg = 3; // is set if status == ERROR
+}
+\end{verbatim}
+Clients can send \verb|HashedStorageHeader| optionally followed by \emph{length} number of raw bytes in case of \verb|XORED_WRITE| and \verb|WRITE| operations to a storage service instance. The storage service sends a \verb|StorageResponseHeader| message back to the client.
+
+\paragraph{Security}
+The \verb|HashedStorageHeader| contain a signature that gives access to the file for a certain amount of time (30 seconds in the current implementation). This means that a client is allowed to \emph{write to} or \emph{read from} the given offset and length for this amount of time, after the sign has expired the client must send a new request to the dictionary service. The signature is created by taking the \emph{SHA1} hashsum of the entire nested \verb|StorageHeader| message (including timestamp) concatenated with a private key that is known by the dictionary service and storage service. Note that this private key must be unique for every storage service because the server address is not part of the signature.
+
+The above principle ensures that only the dictionary service can grant access to clients, and that they can only perform the requested operation within a certain amount of time. However, with this principle there is still a dangerous security problem. Now, an evil client could request the dictionary service for an ADD operation and immediately after a GET operation without actually executing the write. In this case, the client can now perform the GET operation and read the old data that possibly contains privacy sensitive information.
+For this reason, we have decided that the storage service must always notify the dictionary service if a piece of file is actually written (i.e. the \emph{length} bytes are actually received from the client after a \verb|WRITE| request). The dictionary service will never grant access for a \verb|READ| before this notification is received from the storage service, thus \verb|READ| operations are never allowed before the \verb|WRITE| operation is finished.
+
+The timestamped hashing principle ensures that clients cannot read or write data that is not intended for them. However, it is also required that eavesdropping and man-in-the-middle attacks are prevented, this is ensured by using the used SSL encryption layer.
+
+\paragraph{Asynchronous event based communication}
+Since we use the Python Twisted asynchronous event framework~\cite{twisted}, the implementation of the protocol parser is also created in this project. The problem of non-blocking IO~\cite{wiki-nonblocking-io} is that you don't know how much data is received per event, and you don't know in advance if this is enough to parse the entire message. It was for this reason necessary to prepend the length of the message in front of the actual message data~\cite{gpb-stream} as shown in \autoref{fig:message-structure}.
+In this way, we are able to stream multiple messages over the same connection, this is very useful for the replication connection that is explained in the following section.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth,trim=0 23cm 0 3cm,clip=true]{diagrams/message-structure.pdf}
+\caption{Message structure of protocol.}
+\label{fig:message-structure}
+\end{figure}
+
+The parser of the non-blocking IO input resulted in a state machine that is displayed in \autoref{fig:parser-statemachine}. Every state maintains a buffer, and will only go to the next state if it can complete (i.e. parse at least the right number of bytes). Only the \emph{Raw byte(s) parsed} state immediately forwards the bytes to the correct handler (i.e. parts of a file are written incrementally if they are not received in one big chunk). In this case, it is theoretically possible to use a zero-copy method for forwarding the data from the network file-descriptor to the hard disk file-descriptor.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth,trim=0 16cm 0 1cm,clip=true]{diagrams/parser-statemachine.pdf}
+\caption{State machine structure of parser.}
+\label{fig:parser-statemachine}
+\end{figure}
+
+\paragraph{Replication}
+The storage service will store redundant data in order to be failure tolerant as explained in \autoref{sec:state-of-the-art}. A simple but inefficient approach would be to perform exactly the steps as shown in \autoref{fig:xor-replication}. In this way, both storage services must send the data to the parity server (or xor-partner) for a single block that is written by one of the two services. However, the xor-partner is already able to reconstruct the data of the other server that has not performed a write. It only needs to have the old data of the server that has (over)written data. So, in this case mutual exclusion between the two storage services is not an issue anymore, only two times the message size (old data + new data) must be send to the parity server.
+
+Moreover, if we write down this calculation more formal we can conclude that we only have to send the size of the actual message. \\ $\text{P}$ maintains the parity data of  $\text{A1}$ and $\text{A2}$:
+\begin{equation}\label{eq1}
+\text{P} = \text{A1} \text{ XOR } \text{A2}
+\end{equation}
+So, lets say we want to store a new value on A1 that is denoted by A1’. The new value of P that is denoted by P’ must be as following:
+\begin{equation}\label{eq2}
+\text{P’} = \text{A1’} \text{ XOR } \text{A2}
+\end{equation}
+However, we want to prevent that A2 is necessary for the computation. We can still use the old P and A1, and use (\ref{eq1}) to derive A2 and substitute this in (\ref{eq2}):
+$$\text{P’} = \text{A1’} \text{ XOR } \text{A1} \text{ XOR } \text{P}$$
+Now, the intermediate result I can be calculated on the server that initiates the XOR-update:
+$$\text{I} = \text{A1’} \text{ XOR } \text{A1}$$
+Finally, the redundant data server can compute P’:
+$$\text{P’} = \text{I} \text{ XOR } \text{P}$$
+
+Realize that the above equation assumes that all servers initially start in correct XOR-state. We have decided to use the numerical value zero for all instances in the current implementation ($0$ \verb|xor| $0 = 0$) in combination with a sparse file system to prevent long startup times.
+
+Since a storage service connection allows to stream messages over one single connection. A public storage instance only has to maintain this connection and forward all writes that are xored with the current data to the xor-partner instance. As soon as the the storage request is replicated and the item is ready to serve the storage service will send back the existing request header with the actual state. The actual request header is also send back to the client. This header must be included since the actual storage ordering doesn't have to be FIFO. Currently, the communication channels are FIFO ordered and the storage implementation also, but this doesn't have to be the case with respect to our protocol design.
+
+\paragraph{Management}
+The storage instances itself does not guarantee fault-tolerance automatically. If a single storage instance crashes, there must be a system that automatically starts a restore of the lost data. Also, this system must be able to create RAID groups itself, and communicate the correct parity server to each storage instance.
+
+For these management tasks the \verb|StorageManager| component is created. This component is currently not implemented in a redundant way, but this is not a difficult tasks since only two lists (\verb|STAND_BY_LIST| and \verb|ACTIVE_LIST|) must be kept synchronized.
+
+The management component is responsible for checking if all storage instances are working properly. This is done by a ping/echo system, the management component will send a fake storage \verb|READ| request every configurable time interval. We have chosen to send a fake storage request instead of a specific ping request since this will really validate the storage pipeline (and not test if the ping-service is running correctly).
+
+\subsection{Dictionary Service}
+It is difficult to find a piece of data if you do not know where to look. When using a single system that obviously is not distributed then it is easy. But with storage servers that are distributed we need way to locate our data. Since this is an essential service it is of key importance that this service is always running, or at least most of the time. 
+
+\paragraph{The theory}
+The dictionary service is part of the third layer of the database system. Its responsibility is keeping a list of locations to storage servers that exist, possibly all around the world, without knowing where all these storage services are. A client can request (ADD), remove (DELETE) and read (GET) data from the dictionary service. These three operations (ADD, DELETE and GET) are all the operations that a client can perform on the dictionary service. An ADD operation issues a request for free space on a storage server to the freelist \ref{sec:freelist}. The dictionary maps these locations in local dictionary and returns a generated key and the generated locations back to the client. Figure \ref{fig:sequence-add} shows this in detail. There is one special thing with these locations. More on this in the security section. DELETE is similar to the ADD operation. With the only difference of 'traveling' in the other direction. When a client issues a DELETE to the dictionary service it is as easy as telling the freelist that the space is free again and throwing away the pointers to the actual data. The GET operation is the simplest of all. However it is also the most tricky one. More on this when we get to security.
+
+\paragraph{Communication interface}
+The means of communication with a dictionary server is through the three messages that are described below. 
+
+A client sends a Dictionary header message to the dictionary server containing the operation, the amount of bytes of data that it wants to store the key that defines a set of locations. and an issuer. The key and the size are optional and dependent on the operation. When issuing an ADD it makes no sense to send a key with the request. However with a GET it does not make sense to send the size of the data. One field that is important though is the issuer. This is used for replication and security. More on this in the respective sections.
+
+When a request is issued the dictionary responds with a \texttt{DictionaryResponseHeader} message. This message contains a status:  Everything is OK, there is no more space to store data, or you are getting a unknown key. If everything works out and the dictionary returns a list of data locations (or storage instances to write to). This is a list of multiple locations since it is possible that one location cannot hold all the data. In this case the data is distributed over available space. A key is also returned which makes it possible to ask the dictionary service where my data was located. In this way we do not need to store the location, but only the key that `holds' the locations. The locations are transmitted as a host, a port and a signed request. This signed request is for security reasons.
+
+\begin{verbatim}
+message DictionaryHeader {
+    enum Operation {
+        GET = 1;
+        ADD = 2;
+        DELETE = 3;
+        HEARTBEAT = 4;
+    }
+    required Operation operation = 1;
+    required string issuer = 2;
+    optional string key = 3;
+    optional uint64 size = 4;
+}
+
+message DictionaryResponseHeader {
+    enum Status {
+        OK = 1;
+        NO_FREE_SPACE = 2;
+        NOT_EXISTING_KEY = 3;
+    }
+    required Status status = 1;
+    repeated DataLocation locations = 2;
+    optional string key = 3;
+}
+
+message DataLocation {
+    required HashedStorageHeader header = 1;
+    required uint64 port = 2;
+    required string host = 3;
+}
+\end{verbatim}
+
+\paragraph{Replication of locations}
+Since the dictionary is the only place from which we can obtain the location of our physical data it has to be fully fail safe. If the dictionary service goes down for some reason it should still be possible to obtain our data. There are several ways to make the dictionary service fail save. We chose to do master slave replication as shown in figure \ref{fig:master-slave}. A client can contact a master or a slave this makes no difference to the client. However there are some difference to the dictionary server. We want to replicate different incoming requests. When a master or slave receive a GET request then there are no issues. The request is executed and the client gets what he requested. However ADD and DELETE are a different case. This actions have to be replicated in such a way that the dictionary is always consistent. A slave does not know anything about the other dictionary servers so it is not able to replicate. We want to prevent extra overhead in asking his master for the replicas it should contact. When a slave receives an ADD or DELETE request we chose to redirect the request to the master. The master then replicates the request to the slaves and everything works out as it should. One good thing to point out here is: "How does a slave know whether a request came from a client or his master server?". This is where the \texttt{issuer} field in the \textit{DictionaryHeader} message comes in. In this way the slave knows from who the request comes. One small setback in this approach is that we send one extra redirect message and then again get the same request. We essentially send one request to much.
+
+Okay now we can cope with failure of dictionary services. However a server might still fail and might need action from a server manager or maintainer. The management section \ref{sec:management-dictionary}
+
+\paragraph{Management}
+\label{sec:management-dictionary}
+The current master-slave setup is not fail safe or even initiated by itself. When a set of servers is started it currently has to be started by a physical cal to the manager. The manager then creates a replicagroup of a pre determined size $N$. The manager is able to create a group of one master and $N-1$ slaves. It keeps track of the replica groups and sends periodic heartbeat messages to make sure everything is OK. When a slave fails there is no reason to panic. The only thing we currently do is notify the user that a slave has gone down. It is worse if a master dies. When this happens it is no longer possible to issue an ADD or a DELETE since this needs a master. the manage is able to promote one of the slaves to the new master. all the other replicas get a notification that their master has changed and that they have to update the location of their master.
+
+% IT MAKES ABSOLUTELY NO SENSE TO PLACE THIS HERE. BUT SOMEHOW I CANNOT GET IT ON THE RIGHT LOCATION IF I PUT IT UNDER THE REPLICATION SECTION :S
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{diagrams/MasterSlave.png} % TODO use trim+clip!
+\caption{Master-slave replication.}
+\label{fig:master-slave}
+\end{figure}
+
+
+
+\subsection{Freelist Service}
+\label{sec:freelist}
+As mentioned, the freelist service maintains all free space for an entire storage network. It actually maintains an unordered list of the available storage capacity of each storage instance, as shown in the following tuple: \verb|(host, port, offset, length)|. The freelist service has no other knowledge than this, which makes it very low coupled with the rest of the system.
+
+\paragraph{Communication Interface}
+The freelist provides the following public interface that allows \verb|allocateSpace|, \verb|releaseSpace| and \verb|moveHost| operations:
+\begin{verbatim}
+message SpaceLocation {
+    required string host = 1;
+    required uint64 port = 2;
+    required uint64 offset = 3;
+    required uint64 length = 4;
+}
+
+message FreelistRequest {
+    enum Operation {
+        ALLOCATE = 1;
+        RELEASE = 2;
+        MOVE_HOST = 3;
+    }
+    required Operation operation = 1;
+    // for ALLOCATE only:
+    optional uint64 numberOfBytes = 2;
+    // for RELEASE only:
+    repeated SpaceLocation releasedSpace = 3;
+    // for MOVE_HOST online:
+    optional StorageAdminServerLocation moveFrom = 4;
+    optional StorageAdminServerLocation moveTo = 5;
+}
+
+message FreeListResponse {
+    enum Status {
+        OK = 1;
+        ERROR = 2;
+    }
+    required Status status = 1;
+    optional string errorMsg = 2; // is set if status == ERROR
+    repeated SpaceLocation freeSpace = 3;
+}
+\end{verbatim}
+
+\paragraph{Scheduling}
+\label{sec:scheduling}
+Because the freelist has the responsibility to provide the rest of the system with free memory chunks, it must decide which part of memory is released: \emph{which hosts} and \emph{how many chunks}. This is an important task since it influences the load and fragementation of the entire system. In other words, you don't want that single server instance has to handle all \verb|ADD| requests at one time, but you also don't want that the client has to upload its data of 1kb to 1024 servers.
+
+Since it is probably possible to write an entire master thesis about this topic, we have decided to use a simple \emph{Round Robin} scheduling mechanism in the current implementation. The major benefit of this is that the load is nicely spread among different instances under normal circumstances (a lot of small requests). However, if a large piece of memory will be requested it is possible that one server has to handle an enormous \verb|WRITE| request in one time. Nevertheless, the current implementation is able to handle requests that do not fit in one single piece of memory by spreading the data among a multiple pieces.
+
+Also, \emph{Round Robin} affects the fragmentation of free memory in a very bad way. Especially if a lot of small memory pieces will be released, the freelist will see this as a lot of different chunks (even if they are aligned next to each other). A possible improvement could be to make the freelist sorted with respect to the memory chunk size, and try to fit a request into the smallest chunk.
+
+\paragraph{Robustness with respect to dead storage instances}
+Single instances in the storage service layer can die and be replaced by a new server. This means that the freelist would free `dead` memory if no actions are performed. For this reason the \verb|moveHost| functionality is created, this allows the freelist to redirect all free space that is linked to one single host/port combination to a new host/port combination.
+
+Since the entire system will not wait before the system has finished the restore and redirect, it is the responsibility for the client to handling dead hosts in between. The client must have a robust implementation that will re-request failed operations on a dead host, and the dictionary service must release unsuccessfully uploaded space after a while.
+
+\subsection{Client}
+Without the optional front-end layer this layer must know the mapping from dictionary keys to dictionary server instance. Because there is currently only one dictionary service that is replicated among different physical instances the client must know the address of one of these instances.
+
+We have implemented the client with a blocking connection for simplicity reasons. This could theoretically also be a non-blocking asynchronous connections. However, this does not give a major performance benefit because a "normal" client will not have a lot of open connections.
+
+Because the client is implemented in Python it is possible to simply use the Python command-line for storing and retrieving files.
+
+\section{Results}
+In this project we have shown that our layer architecture works well for distributed storage system. The lowest layer, the storage service and freelist service, can be seen as a distributed filesystem. While, the dictionary layer gives meaning and consistency to individual files.
+
+We have especially used the fault-tolerant and replication topics of the Distributed Systems course. For example, the dictionary service uses a master-slave architecture with a replica manager that was explained during the lecture. The storage service uses a special replica structure since it requires the parity server.
+
+Finally, we have to conclude that not the entire system can be considered as fault-tolerant. For example, the freelist is currently not replicated, and the dictionary service is not partitioned which might give scalability problemens. At the same time, the dictionary service and storage service are fault-tolerant. Some more improvements are discussed in the following section.
+
+\section{Future improvements}
+This section is intended to highlight some important improvements that we could not finish during the project.
+
+\subsection{General}
+\paragraph{Clock synchronization between dictionary and storage services}
+The system heavily relies on the system clock because the timestamped hashing algorithm uses the normal wall-clock time to sign the storage requests. This means that if there is a major time difference between the dictionary server (signer) and the storage server (validator) the authentication will always fail. We have seen that this can happen during system testing. Clock synchronization between each component could easily solve this issue.
+
+\paragraph{Key management}
+Every server instance must have its own SSL keys and the storage service must also have a unique private sign key (that is only shared with the trusted dictionary service layer). Due to lack of time we were not able to implement this part, and now every component uses the same SSL key and every storage layer has the same signature key.
+
+Because all storage services share the same sign-key in the current implementation it actually means that \emph{every} signed operation can be executed on \emph{every} client. This can be considered as a major security vulnerability.
+
+\paragraph{Improved error handling}
+In all cases, the client or optional front-end are responsible to retry an entire request if an error occurs. An error can be discovered if a response messages contains an error value, or if a request doesn't complete within a "reasonable" amount of time.
+
+Furthermore, the dictionary service must regularly check for "dead entries" in the filetable. A "dead entry" is an entry that is requested by a client, but the actual file is never written (i.e. the file-unlock request has never reached the dictionary service). This problem can occur when a \verb|WRITE| operation on a storage service has failed (e.g. client went down or storage service did crash). This last part is not implemented in the current implementation, so in case of an crash some memory is "leaked".
+
+\subsection{Storage Service}
+\paragraph{Blocking code between storage and parity server}
+Currently the throughput between a storage server and another storage server (e.g. parity server or recovery connection) is affected by the blocking behavior of this connection. Now the sender service must wait until the entire \verb|XOR_WRITE| operation has completed and cannot continue sending new updates to the receiver. This should be solved by using asynchronous communication, as the protocol is originally intended for. However, such an asynchronous communication client was too complex to implement within this project. The difference between blocking and asynchronous is shown in \autoref{fig:blocking-async}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth,trim=0 8cm 0 0,clip=true]{diagrams/blocking-async.png}
+\caption{Blocking (left) versus Asynchronous (right) communication.}
+\label{fig:blocking-async}
+\end{figure}
+
+\paragraph{Chunked reading of large files}
+Currently, a \verb|WRITE| request is forwarded to the disk process queue in one big chunk. However, this might give starvation of other requests if the request is very large. A way to solve this is to cut this bug chunk in different small chunks and to schedule these requests. A solution might be to have multiple threads reading the same file. 
+
+Ordering of the request at this level is not important (as long fairness is guaranteed) since the dictionary service will coordinate the consistency among the \verb|GET| and \verb|ADD| request.
+
+\paragraph{Supporting SET (overwriting existing keys)}
+Currently the \verb|SET| operation is not supported. The \verb|SET| operation is more complex than \verb|ADD| and \verb|GET| since it involves consistency within one item. Also in case of a \verb|SET| operation, the dictionary service must guarantee consistency (i.e. read only the new version if it is uploaded completely). For this reason, the \verb|SET| operation could be as best be implemented as a combination of \verb|ADD| and an update of the key in the filetable. In this way, the old file will still be available until a new version is uploaded.
+
+\paragraph{Replicate among different storage instances}
+If one file requires a lot of \verb|READ| operations it is possible that a single instance cannot handle all the load anymore. For this reason, it might be necessary to spread popular items among multiple physical storage instances. This easily possible with the current dictionary service if the client would be responsible to upload the data multiple times. However, freelist service must be changed because it should be able to return storage locations that are not already used for that specific file (i.e. replication for scalability in one physical machine doesn't make sense).
+
+\subsection{Dictionary Service}
+
+\paragraph{Leader election to promote new master}
+In the current implementation when a master dies a random slave is promoted to be the new master. One very big flaw in this approach is that a master could have died in the middle of a replication action. This could mean that a part of the replica group does not hold consistent data. In this case choosing a random new master poses the threat of becoming inconsistent. Some sort of leader election could be used here to make sure that the most consistent slave gets a promotion to the new master. The choice you would have to make is whether consistency is preferred over availability since leader election takes time.
+
+\paragraph{On the fly replica group addition}
+When a master-slave set-up is unable to cope with the load that it holds it would come in handy if we could add slaves or even entire replica groups. This is not to make it cope with errors better but to cope with load. Because what we ultimately want is scalability. The overhead for extra communication could get big but some research in how to improve the system like this could be done. However this would only make sense if you would shard the data and create an extra shard. currently you cannot add a new replica on the fly since it would need to obtain the set of existing keys from the master. We did not implement this due to the lack of time.
+
+\paragraph{Auto `sign-in' on creation}
+When a dictionary service starts it should notify the manager that it wants work and become part of and support a certain replica group. This could happen in an automated way. The only thing that the dictionary would have to know the location of the manager which could plug it in to an exiting replica group or even create a new one.
+
+\paragraph{Ring for key distribution instead of Master-Slave (CHORD)}
+The master slave system gives us a properly working system that can handle errors. However the current database that exist on the market are able to shard their data. It would be nice if we would be able to do so too. What we essentially want is a peer to peer system in which it does not matter at all which dictionary service is contacted. I this service does not own the data (or key) itself than it is possible to search for the data through a virtual ring structure. The theory is described on wikipedia~\cite{chord}. Another thing we did research in was consistent hashing~\cite{consistenthashing}. This is also a means of distributing keys over a set of nodes and makes it fail safe.
+
+\subsection{Freelist Service}
+\paragraph{Fault tolerance and partition tolerance}
+The current implementation only supports one freelist instance that is not replicated at all, which results in a single point of failure in our system. Since the freelist is a very important component that must scale because all \verb|ADD| operations depend on it, it should be possible to partition the free memory among different nodes.
+
+However, this is a pretty difficult tasks since every node should be responsible for a subset of the available memory, but large file request should still be able to complete. We have not solved this issue during the project.
+
+\paragraph{Better scheduling to prevent fragmentation}
+As mention in \autoref{sec:scheduling} fragmentation will occur if a lot of \verb|DELETE| request are performed. A more intelligent scheduling algorithm could solve this. However, such an algorithm also requires that information about the available space and about the fragmentation must be shared across all nodes. This could probably done lazily with for example a Gossip Protocol.
+
+\bibliographystyle{plain}
+\bibliography{ref}
+\nocite{*}
+
+\end{document}

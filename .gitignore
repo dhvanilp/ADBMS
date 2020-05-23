@@ -1,0 +1,16 @@
+**~
+**.pyc
+
+**.DS_Store
+
+*.bin
+
+report/report.aux
+report/report.log
+report/ds-westra-harmsma.pdf
+report/report.toc
+report/report.out
+
+*.pyc
+src/venv2
+
