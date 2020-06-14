@@ -9,7 +9,7 @@ from storage.handler import StorageRequestHandler
 from storage.storagedb import StorageDatabase
 from storage.admin import StorageAdminServer
 
-DEFAULT_DB_SIZE = 10*1024*1024 # 10mb, small for testing
+DEFAULT_DB_SIZE = 500*1024*1024 # 10mb, small for testing
 
 class StorageServer(FixedLengthMessageServer):
     def __init__(self, options, args):

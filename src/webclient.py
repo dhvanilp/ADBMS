@@ -21,13 +21,13 @@ PAGE = """
         <form enctype="multipart/form-data" action="/" method="post">
             <p>
                 <label for="dicthost">Dictionary Host:</label>
-                <input type="text" name="dicthost" id="dicthost" />
+                <input type="text" name="dicthost" id="dicthost" value="localhost"/>
                 <label for="dictport">Dictionary Port:</label>
-                <input type="text" name="dictport" id="dictport" />
+                <input type="text" name="dictport" id="dictport" value="8000"/>
             </p>
             
             <p>
-                <label for="file">File:</label>
+                <label for="filekey">File:</label>
                 <input id="file" type="file" name="file">
             </p>
             
@@ -65,6 +65,7 @@ class MyHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _handleGet(self):
+        # print(self.postvars['filekey'][0], self.postvars['dicthost'][0], int(self.postvars['dictport'][0])  )
         data = retrieve(self.postvars['filekey'][0], self.postvars['dicthost'][0], int(self.postvars['dictport'][0]))
         if data:
             self._sendData(data)
@@ -75,16 +76,25 @@ class MyHandler(BaseHTTPRequestHandler):
         if self.path == '/':
             self._sendIndexPage()
         else:
-            self.send_error(404, "Page not found")
+            
+            try:
+                [_, host, port, key] = self.path.split("/")
+                data = retrieve(key, host, int(port))
+                if data:
+                    self._sendData(data)
+                else:
+                    self._sendIndexPage('File Not Found: %s' % key)
+            except:
+                self.send_error(404, "Page not found")
             
     def _handleFileUpload(self):
-        if 'file' not in self.postvars:
+        if 'file' not in self.postvars :
             self._sendIndexPage("Nothing uploaded")
         else:
             fileContent = self.postvars['file'][0]
             try:
                 key = store(fileContent, self.postvars['dicthost'][0], int(self.postvars['dictport'][0]))
-                self._sendIndexPage('File stored with key: <a href="/%s/">%s</a>' % (key, key))
+                self._sendIndexPage('File stored with key: <a href="/%s/%s/%s">%s</a>' % (self.postvars['dicthost'][0], self.postvars['dictport'][0], key, key))
             except:
                 self._sendIndexPage("Error during file upload, try again...")
         
