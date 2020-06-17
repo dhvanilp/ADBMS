@@ -4,12 +4,19 @@
 ## Run the project
 
 ### Create a virtulenv for python2 and install requirements in requirements.txt
+```
+virtualenv venv -p python2
+source venv/bin/activate
+pip install -r requirements.txt
+```
+You need to activate the virtual environment before running each server.
 
 ### Generate the key pair in src/sslcert
 ```
 cd src/sslcert
 openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
 ```
+
 
 
 ### Storage servers:
@@ -36,10 +43,7 @@ python dictionaryserver.py -p 8006 -a 8007 -w 9993
 
 ### Manager:
 ```
-python
-from manager import *
-start()
-testSetup()
+python managerserver.py
 ```
 
 ### Commandline client:
